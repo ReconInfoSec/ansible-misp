@@ -2,4 +2,4 @@
 - name: Deploy MISP
   hosts: misp
   roles:
-    - { role: misp, mailgun_smtp_host: 'smtp.mailgun.org', mailgun_pw: '', mailgun_user: 'misp@example.com', mysql_host: 'mysql.example.com', mysql_root_user: 'root', mysql_root_password: '', mysql_misp_user: 'misp', mysql_misp_password: '', cert_org: '', cert_country: '', cert_state: '', cert_local: '', servername: 'misp.example.com' }
+    - { role: misp, install_modules: 'yes', mailgun_smtp_host: 'smtp.mailgun.org', mailgun_pw: '', mailgun_user: 'misp@example.com', mysql_host: 'mysql.example.com', mysql_root_user: 'root', mysql_root_password: '', mysql_misp_user: 'misp', mysql_misp_password: '', cert_org: '', cert_country: '', cert_state: '', cert_local: '', servername: 'misp.example.com' }
