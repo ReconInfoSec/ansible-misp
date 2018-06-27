@@ -1,0 +1,302 @@
+---
+- import_tasks: mysql.yml
+- import_tasks: apache.yml
+- import_tasks: postfix.yml
+
+- name: Install all needed packages
+  apt:
+    pkg: "{{ item }}"
+    state: latest
+    update_cache: yes
+  with_items:
+    - gcc
+    - zip
+    - php-pear
+    - git
+    - redis-server
+    - make
+    - python-dev
+    - python-pip
+    - libxml2-dev
+    - libxslt1-dev
+    - zlib1g-dev
+    - php-dev
+    - curl
+    - gnupg-agent
+    - openssl
+    - vim
+    - php-mysql
+    - php-fpm
+    - php-redis
+    - php-mbstring
+    - php-opcache
+    - php-readline
+    - php-xml
+    - php-crypt-gpg
+    - python-setuptools
+    - python3-pip
+    - python3-dev
+
+- name: Modify php.ini
+  blockinfile:
+    path: /etc/php/7.0/apache2/php.ini
+    block: |
+      extension = php_intl.dll
+      extension = php_pdo_mysql.dll
+      intl.default_locale = en_utf8
+      intl.error_level = E_WARNING
+
+- name: Restart Apache
+  service:
+    name: apache2
+    state: restarted
+
+### MISP repositories
+
+- name: Clone MISP repository
+  git:
+    repo: "https://github.com/MISP/MISP.git"
+    dest: "/var/www/MISP"
+    recursive: yes
+    force: yes
+    update: no
+    accept_hostkey: yes
+
+- name: Check out latest version
+  become: true
+  shell: "{{ item }}"
+  args:
+    chdir: /var/www/MISP
+  with_items:
+    - git checkout tags/$(git describe --tags `git rev-list --tags --max-count=1`)
+
+- name: Configure Git
+  git_config:
+    name: core.filemode
+    scope: global
+    value: false
+
+- name: Clone MISP depedencies | Python-Cybox
+  git:
+    repo: "https://github.com/CybOXProject/python-cybox.git"
+    dest: "/var/www/MISP/app/files/scripts/python-cybox"
+    force: yes
+    update: no
+    accept_hostkey: yes
+
+- name: Clone MISP depedencies | Python-Stix
+  git:
+    repo: "https://github.com/STIXProject/python-stix.git"
+    dest: "/var/www/MISP/app/files/scripts/python-stix"
+    force: yes
+    update: no
+    accept_hostkey: yes
+
+- name: Clone MISP depedencies | mixbox
+  git:
+    repo: "https://github.com/CybOXProject/mixbox.git"
+    dest: "/var/www/MISP/app/files/scripts/mixbox"
+    force: yes
+    update: no
+    accept_hostkey: yes
+
+- name: Install MISP depedencies | Python-Cybox
+  become: true
+  shell: "{{ item }}"
+  args:
+    chdir: /var/www/MISP/app/files/scripts/python-cybox
+  with_items:
+    - python3 setup.py install
+
+- name: Install MISP depedencies | Python-Stix
+  become: true
+  shell: "{{ item }}"
+  args:
+    chdir: /var/www/MISP/app/files/scripts/python-stix
+  with_items:
+    - python3 setup.py install
+
+- name: Install MISP depedencies | mixbox
+  become: true
+  shell: "{{ item }}"
+  args:
+    chdir: /var/www/MISP/app/files/scripts/mixbox
+  with_items:
+    - python3 setup.py install
+
+- name: Install PyMISP
+  become: true
+  shell: "{{ item }}"
+  args:
+    chdir: /var/www/MISP/PyMISP
+  with_items:
+    - python3 setup.py install
+
+- name: Install support for STIX 2.0
+  pip:
+    name: stix2
+
+### cake... mmm, cake
+
+- name: CakePHP submodule
+  shell: "{{ item }}"
+  args:
+    chdir: /var/www/MISP/
+  with_items:
+    - git submodule init
+    - git submodule update
+    - git submodule foreach git config core.filemode false
+
+- name: Install COMPOSER in /bin
+  copy:
+    remote_src: True
+    src: /var/www/MISP/app/composer.phar
+    dest: /usr/local/bin/composer
+    owner: root
+    group: root
+    mode: 0755
+
+- name: Cake-resque installation
+  composer:
+    command: "require"
+    arguments: "kamisama/cake-resque:4.1.2"
+    working_dir: "/var/www/MISP/app"
+  register: cakeresque_install
+
+- name: Vendor configure
+  composer:
+    command: "config"
+    arguments: "vendor-dir Vendor"
+    working_dir: "/var/www/MISP/app"
+  when: cakeresque_install.changed
+
+- name: PHP composer install
+  composer:
+    command: "install"
+    arguments: ""
+    working_dir: "/var/www/MISP/app"
+
+- name: Copy CakeResque config file
+  copy:
+    remote_src: True
+    src: /var/www/MISP/INSTALL/setup/config.php
+    dest: /var/www/MISP/app/Plugin/CakeResque/Config/config.php
+    force: yes
+    owner: www-data
+    group: www-data
+    mode: 0774
+
+### permissions
+
+- name: Fix permissions
+  file:
+    path: /var/www/MISP
+    owner: www-data
+    group: www-data
+    mode: 0750
+    state: directory
+    recurse: yes
+
+### logrotate
+
+- name: Copy logrotate conf file
+  copy:
+    src: files/logrotate-misp
+    dest: /etc/logrotate.d/misp
+
+### MISP configuration files
+
+- name: Copy MISP configuration files
+  template:
+    src: "misp/config/{{item}}"
+    dest: "/var/www/MISP/app/Config/{{item}}"
+    force: yes
+    owner: www-data
+    group: www-data
+    mode: 0774
+  with_items:
+    - bootstrap.php
+    - config.php
+    - core.php
+    - database.php
+
+### GPG
+
+- name: Create the directory for GNUPG
+  file:
+    path: "/var/www/MISP/.gnupg"
+    owner: www-data
+    group: www-data
+    mode: 0770
+    state: directory
+
+### workers
+
+- name: Check MISP worker launcher permissions
+  file:
+    path: /var/www/MISP/app/Console/worker/start.sh
+    owner: www-data
+    group: www-data
+    mode: 0764
+
+- name: Check MISP worker autolaunch at boot
+  lineinfile:
+    state: present
+    dest: /etc/rc.local
+    insertbefore: "exit 0"
+    line: "sudo -u www-data bash /var/www/MISP/app/Console/worker/start.sh"
+
+- name: MISP app and its tmp directories permissions
+  file:
+    path: "{{ item }}"
+    owner: www-data
+    group: www-data
+    mode: 02775
+    state: directory
+  with_items:
+    - "/var/www/MISP/app"
+    - "/var/www/MISP/app/tmp"
+
+### zeromq
+
+- name: Install ZeroMQ
+  pip:
+    name: pyzmq
+    state: latest
+
+### redis
+
+- name: Install Python client for Redis
+  pip:
+    name: redis
+    state: latest
+
+- name: Enable CakeResque with php-redis
+  shell: "{{ item }}"
+  args:
+    chdir: /var/www/MISP/
+  with_items:
+    - phpenmod redis
+
+### initialize mysql database
+
+- name: MySQL | Initialize MISP database
+  shell: "{{ item }}"
+  with_items:
+    - mysql -D misp -h {{ mysql_host }} -u {{ mysql_misp_user }} --password={{ mysql_misp_password }} < /var/www/MISP/INSTALL/MYSQL.sql
+  no_log: True
+
+### permissions
+
+- name: Fix all files permissions
+  file:
+    path: /var/www/MISP
+    recurse: yes
+    state: directory
+    mode: "g=u"
+
+### modules
+
+- name: Install misp-modules
+  include: modules.yml
+  when: install_modules == 'y'

@@ -1,0 +1,72 @@
+- name: Install postfix
+  apt:
+    name: "{{ item }}"
+  with_items:
+    - postfix
+    - mailutils
+    - libsasl2-2
+    - ca-certificates
+    - libsasl2-modules
+
+- name: Add config items to postfix
+  lineinfile:
+    path: /etc/postfix/main.cf
+    state: present
+    line: "{{ item }}"
+  with_items:
+    - "smtp_sasl_auth_enable = yes"
+    - "smtp_sasl_password_maps = hash:/etc/postfix/sasl_passwd"
+    - "smtp_sasl_security_options = noanonymous"
+    - "smtp_tls_CAfile = /etc/ssl/certs/thawte_Primary_Root_CA.pem"
+    - "smtp_use_tls = yes"
+    - "smtp_generic_maps = hash:/etc/postfix/generic"
+
+- name: postfix relayhost
+  lineinfile:
+    path: /etc/postfix/main.cf
+    line: 'relayhost = [{{ mailgun_smtp_host }}]:587'
+    regexp: '^relayhost(.*)$'
+
+- name: postfix hostname
+  lineinfile:
+    dest: /etc/postfix/main.cf
+    line: 'myhostname = misp.reconis.co'
+    regexp: '^myhostname(.*)$'
+
+- name: postfix domain
+  lineinfile:
+    dest: /etc/postfix/main.cf
+    line: 'mydomain = misp.reconis.co'
+    regexp: '^mydomain(.*)$'
+
+- name: Add mailgun creds
+  shell: "echo [{{ mailgun_smtp_host }}]:587 {{ mailgun_user }}:{{ mailgun_pw }} > /etc/postfix/sasl_passwd"
+
+- name: Postmap sasl_passwd
+  shell: postmap /etc/postfix/sasl_passwd
+
+- name: Add masquerade
+  shell: "echo root@{{ hostvars[inventory_hostname].ansible_hostname }}.ec2.internal misp@mg.reconis.co > /etc/postfix/generic"
+
+- name: Postmap generic
+  shell: postmap /etc/postfix/generic
+
+- name: Fix perms
+  file:
+    path: /etc/postfix/sasl_passwd
+    mode: 0400
+    owner: root
+    group: root
+
+- name: Fix perms
+  file:
+    path: /etc/postfix/sasl_passwd.db
+    mode: 0600
+    owner: root
+    group: root
+
+- name: Restart postfix
+  service:
+    name: postfix
+    state: restarted
+    enabled: yes

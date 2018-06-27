@@ -1,0 +1,42 @@
+- name: Python dependencies
+  apt:
+    name: "{{ item }}"
+    state: present
+    update_cache: yes
+  with_items:
+    - python3-mysqldb
+    - python3-pip
+    - python3-dev
+
+- name: mysql-client - installation
+  apt:
+    name: mysql-client
+    state: present
+
+- name: Install MySQL python module
+  command: "pip3 install {{ item }}"
+  with_items:
+    - configparser
+    - PyMySQL
+    - mysqlclient
+
+- name: Create MISP database
+  mysql_db:
+    name: "misp"
+    login_host: "{{ mysql_host }}"
+    login_password: "{{ mysql_root_password }}"
+    login_user: "{{ mysql_root_user }}"
+  register: mysql_init
+  ignore_errors: yes
+
+- name: Create MISP database user
+  mysql_user:
+    name: '{{ mysql_misp_user }}'
+    password: '{{ mysql_misp_password }}'
+    priv: 'misp.*:ALL'
+    state: present
+    host: '%'
+    login_user: '{{ mysql_root_user }}'
+    login_password: '{{ mysql_root_password }}'
+    login_host: '{{ mysql_host }}'
+  ignore_errors: yes
