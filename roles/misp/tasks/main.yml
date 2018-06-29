@@ -68,7 +68,7 @@
   args:
     chdir: /var/www/MISP
   with_items:
-    - git checkout tags/$(git describe --tags `git rev-list --tags --max-count=1`)
+    - git checkout -b 2.4.93
 
 - name: Configure Git
   git_config:
